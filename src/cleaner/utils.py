@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import UTC, datetime
 
@@ -73,14 +72,6 @@ def next_delay(completed: int, total: int) -> float:
     delay = human_delay()
     if completed % REST_EVERY == 0:
         delay += rest_delay()
-    return delay
-
-
-async def adaptive_sleep(completed: int, total: int) -> float:
-    """Sleep for :func:`next_delay` seconds and return the duration slept."""
-    delay = next_delay(completed, total)
-    if delay > 0:
-        await asyncio.sleep(delay)
     return delay
 
 

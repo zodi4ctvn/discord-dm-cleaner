@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
+from rich.markup import escape as escape_markup
 
-from . import __author__, ui
+from . import ui
 from .api import (
     APIError,
     DateFilter,
@@ -31,8 +30,8 @@ from .backup import (
 )
 from .checkpoint import Checkpoint, clear_checkpoint, load_checkpoint, save_checkpoint
 from .i18n import detect_default_language, set_language, t
+from .integrity import verify_integrity
 from .security import (
-    TOKEN_ENV_VAR,
     SignatureError,
     TokenError,
     TokenRevokedError,
@@ -41,9 +40,9 @@ from .security import (
     clear_clipboard,
     clipboard_has_token,
     generate_fingerprint,
-    verify_signature,
 )
 from .utils import (
+    REST_EVERY,
     GoBack,
     console,
     human_delay,
@@ -95,10 +94,11 @@ async def _scan_channels(
                         summary.per_channel_counts[ch.id] = 0
                         continue
 
+                safe_name = escape_markup(ch.name)
                 status.update(
                     t(
                         "scanning_channel",
-                        name=ch.name,
+                        name=safe_name,
                         idx=idx,
                         total=total_channels,
                         scanned=0,
@@ -110,7 +110,7 @@ async def _scan_channels(
                     scanned: int,
                     matched: int,
                     *,
-                    _name: str = ch.name,
+                    _name: str = safe_name,
                     _idx: int = idx,
                 ) -> None:
                     status.update(
@@ -228,6 +228,12 @@ async def _stream_delete_all(
                     msg_filter=msg_filter,
                     max_messages=remaining,
                 ):
+                    if deleted_count > 0:
+                        delay = human_delay()
+                        if deleted_count % REST_EVERY == 0:
+                            delay += rest_delay()
+                        view.waiting(delay)
+                        await asyncio.sleep(delay)
                     if collected is not None:
                         collected.append(msg)
                     view.start(msg)
@@ -236,11 +242,6 @@ async def _stream_delete_all(
                     deleted_count += 1
                     if max_messages is not None and deleted_count >= max_messages:
                         break
-                    delay = human_delay()
-                    if deleted_count % 15 == 0:
-                        delay += rest_delay()
-                    view.waiting(delay)
-                    await asyncio.sleep(delay)
 
     return view.results
 
@@ -520,15 +521,11 @@ def _run(session: TokenSession, clients: list[str]) -> int:
 
 def main() -> None:
     """CLI entry point (``ddc``)."""
-    env_token_present = TOKEN_ENV_VAR in os.environ
-    load_dotenv(override=False)
-    if not env_token_present:
-        os.environ.pop(TOKEN_ENV_VAR, None)
+    verify_integrity()
 
     session: TokenSession | None = None
     exit_code = 0
     try:
-        verify_signature(__author__, ui._BANNER_LINES)
         set_language(detect_default_language())
         detected = ui.detect_clients()
         clients: list[str] = []

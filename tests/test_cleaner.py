@@ -22,9 +22,10 @@ from cleaner.api import (
     User,
     _parse_channel,
 )
-from cleaner.backup import BackupFormat, export_backup
+from cleaner.backup import BackupFormat, download_attachments, export_backup
 from cleaner.checkpoint import Checkpoint, clear_checkpoint, load_checkpoint, save_checkpoint
 from cleaner.i18n import STRINGS
+from cleaner.integrity import check_integrity, verify_integrity
 from cleaner.security import (
     SignatureError,
     TokenRevokedError,
@@ -511,3 +512,104 @@ def test_export_backup_html_discord_theme_and_xss_escape(tmp_path: Path) -> None
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_text
     assert "PINNED" in html_text
     assert "https://cdn.example/pic.png" in html_text
+    assert 'rel="noopener noreferrer"' in html_text
+
+
+def test_integrity_passes_default_and_frozen() -> None:
+    assert check_integrity() == []
+    assert check_integrity(is_frozen=True) == []
+
+
+def test_integrity_detects_tampering_and_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert "author_mismatch" in check_integrity(author="rebrander", is_frozen=True)
+    assert "package_renamed" in check_integrity(package_name="stolen_pkg", is_frozen=True)
+    bad_strings = {
+        "en": {"sel_title": "Stolen Tool"},
+        "tr": {"sel_title": "Çalıntı Araç"},
+    }
+    violations = check_integrity(strings=bad_strings, is_frozen=True)
+    assert "i18n_project_name_missing:en" in violations
+    assert "i18n_project_name_missing:tr" in violations
+
+    monkeypatch.setattr("cleaner.integrity.check_integrity", lambda: ["author_mismatch"])
+    with pytest.raises(SystemExit) as exc_info:
+        verify_integrity()
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_backup_download_allowlist_and_size_cap(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/small.png":
+            return httpx.Response(200, content=b"PNGDATA")
+        if request.url.path == "/huge.bin":
+            return httpx.Response(200, content=b"X" * 2048)
+        return httpx.Response(404)
+
+    ts = datetime(2025, 5, 10, tzinfo=UTC)
+    msgs = [
+        Message(
+            id="1",
+            channel_id="c",
+            channel_name="ch",
+            author_id="u",
+            content="",
+            timestamp=ts,
+            attachments=(
+                "https://cdn.discordapp.com/small.png",
+                "https://evil.example.com/secret.png",
+                "https://media.discordapp.net/huge.bin",
+            ),
+        )
+    ]
+    media_dir = tmp_path / "media"
+    result = await download_attachments(
+        msgs,
+        media_dir,
+        max_bytes=1024,
+        transport=httpx.MockTransport(handler),
+    )
+    assert "https://cdn.discordapp.com/small.png" in result
+    assert "https://evil.example.com/secret.png" not in result
+    assert "https://media.discordapp.net/huge.bin" not in result
+
+
+@pytest.mark.asyncio
+async def test_client_429_does_not_double_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTTP 429 must only sleep via backoff_429 and NOT via HeaderRateLimiter.observe."""
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("cleaner.api.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("cleaner.security.asyncio.sleep", fake_sleep)
+
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                429,
+                headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset-After": "9.0"},
+                json={"retry_after": 0.5},
+            )
+        return httpx.Response(204)
+
+    session = TokenSession(_dummy_token())
+    client = DiscordClient(session, generate_fingerprint())
+    client._http = httpx.AsyncClient(
+        base_url="https://discord.com/api/v10",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        msg = Message("1", "555", "@friend", "999", "hi", datetime(2025, 5, 10, tzinfo=UTC))
+        res = await client.delete_message(msg)
+        assert res.status is DeleteStatus.DELETED
+        assert len(sleeps) == 1
+        assert client._limiter.total_waited == 0.0
+    finally:
+        await client.aclose()
+        session.wipe()

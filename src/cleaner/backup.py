@@ -16,6 +16,8 @@ import httpx
 from .api import DateFilter, DMChannel, Message, User
 
 DEFAULT_BACKUP_DIR: Path = Path("backups")
+ALLOWED_MEDIA_HOSTS: frozenset[str] = frozenset({"cdn.discordapp.com", "media.discordapp.net"})
+MAX_ATTACHMENT_BYTES: int = 50 * 1024 * 1024  # 50 MiB cap per attachment
 _IMAGE_EXTS: frozenset[str] = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"})
 _SAFE_NAME_RE: re.Pattern[str] = re.compile(r"[^A-Za-z0-9._-]+")
 _URL_RE: re.Pattern[str] = re.compile(r"(https?://[^\s<]+)", re.IGNORECASE)
@@ -49,13 +51,25 @@ def _sanitize_filename(url: str, index: int) -> str:
     return f"{index:04d}_{clean[:80]}"
 
 
-async def download_attachments(messages: list[Message], media_dir: Path) -> dict[str, str]:
-    """Download message attachments into ``media_dir`` and return ``{url: relative_path}``."""
+def _is_allowed_media_url(url: str) -> bool:
+    """Return ``True`` only for HTTPS URLs hosted on Discord's official CDN domains."""
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and (parsed.hostname or "").lower() in ALLOWED_MEDIA_HOSTS
+
+
+async def download_attachments(
+    messages: list[Message],
+    media_dir: Path,
+    *,
+    max_bytes: int = MAX_ATTACHMENT_BYTES,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, str]:
+    """Download allowed Discord CDN attachments into ``media_dir`` with a per-file size cap."""
     urls: list[str] = []
     seen: set[str] = set()
     for msg in messages:
         for url in msg.attachments:
-            if url and url not in seen:
+            if url and url not in seen and _is_allowed_media_url(url):
                 seen.add(url)
                 urls.append(url)
     if not urls:
@@ -67,16 +81,37 @@ async def download_attachments(messages: list[Message], media_dir: Path) -> dict
         timeout=httpx.Timeout(20.0, connect=10.0),
         follow_redirects=True,
         trust_env=False,
+        transport=transport,
     ) as client:
         for idx, url in enumerate(urls, start=1):
             fname = _sanitize_filename(url, idx)
             dest = media_dir / fname
             try:
-                resp = await client.get(url)
-                if resp.status_code == 200 and resp.content:
-                    dest.write_bytes(resp.content)
+                async with client.stream("GET", url) as resp:
+                    if resp.status_code != 200 or not _is_allowed_media_url(str(resp.url)):
+                        continue
+                    cl_header = resp.headers.get("content-length")
+                    if cl_header is not None:
+                        try:
+                            if int(cl_header) > max_bytes:
+                                continue
+                        except ValueError:
+                            pass
+                    written = 0
+                    exceeded = False
+                    with dest.open("wb") as fh:
+                        async for chunk in resp.aiter_bytes():
+                            written += len(chunk)
+                            if written > max_bytes:
+                                exceeded = True
+                                break
+                            fh.write(chunk)
+                    if exceeded or written == 0:
+                        dest.unlink(missing_ok=True)
+                        continue
                     mapping[url] = f"{media_dir.name}/{fname}"
             except (httpx.HTTPError, OSError):
+                dest.unlink(missing_ok=True)
                 continue
     return mapping
 
@@ -265,12 +300,12 @@ def _write_html(
                 label = html.escape(Path(urlparse(url).path).name or "attachment")
                 if _is_image_url(url):
                     att_blocks.append(
-                        f'<div class="att"><a href="{href}" target="_blank">'
+                        f'<div class="att"><a href="{href}" target="_blank" rel="noopener noreferrer">'
                         f'<img src="{href}" alt="{label}" loading="lazy"></a></div>'
                     )
                 else:
                     att_blocks.append(
-                        f'<div class="att"><a class="file" href="{href}" target="_blank">'
+                        f'<div class="att"><a class="file" href="{href}" target="_blank" rel="noopener noreferrer">'
                         f"📎 {label}</a></div>"
                     )
             atts_html = "".join(att_blocks)

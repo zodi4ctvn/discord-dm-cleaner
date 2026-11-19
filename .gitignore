@@ -23,7 +23,6 @@ lib64/
 venv/
 ENV/
 env/
-.env
 
 # Distribution / packaging
 .Python

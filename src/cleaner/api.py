@@ -408,8 +408,6 @@ class DiscordClient:
                 await asyncio.sleep(SERVER_ERROR_DELAY)
                 continue
 
-            await self._limiter.observe(response)
-
             status = response.status_code
             if status == 401:
                 raise TokenRevokedError(t("err_401"))
@@ -428,6 +426,7 @@ class DiscordClient:
                 await asyncio.sleep(SERVER_ERROR_DELAY)
                 continue
 
+            await self._limiter.observe(response)
             return response
 
     # ------------------------------------------------------------------ endpoints
@@ -530,10 +529,11 @@ class DiscordClient:
                 params["max_id"] = datetime_to_snowflake(
                     date_filter.before_dt + timedelta(seconds=1)
                 )
-            if msg_filter.kind == MessageKind.ATTACHMENTS_ONLY:
-                params["has"] = "file"
-            elif msg_filter.kind == MessageKind.LINKS_ONLY:
-                params["has"] = "link"
+            if msg_filter.keep_latest == 0:
+                if msg_filter.kind == MessageKind.ATTACHMENTS_ONLY:
+                    params["has"] = "file"
+                elif msg_filter.kind == MessageKind.LINKS_ONLY:
+                    params["has"] = "link"
 
             retries_202 = 0
             while True:

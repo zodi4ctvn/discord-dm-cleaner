@@ -465,11 +465,6 @@ def set_language(lang: str) -> None:
     _current = lang if lang in SUPPORTED else "en"
 
 
-def get_language() -> str:
-    """Return the currently active language code."""
-    return _current
-
-
 def t(key: str, **kwargs: Any) -> str:
     """Look up ``key`` in the active language and format with ``kwargs``."""
     table = STRINGS.get(_current, STRINGS["en"])

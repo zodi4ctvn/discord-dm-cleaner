@@ -27,6 +27,7 @@ from prompt_toolkit.widgets import Frame
 from rich import box
 from rich.align import Align
 from rich.live import Live
+from rich.markup import escape as escape_markup
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -1039,7 +1040,7 @@ def confirm_delete(
     table.add_row(t("confirm_channels", n=len(summary.channels)))
     table.add_row(t("confirm_filter", flt=date_filter.describe()))
     table.add_row(t("confirm_msg_filter", mflt=mflt.describe()))
-    table.add_row(t("confirm_backup", backup=backup_desc))
+    table.add_row(t("confirm_backup", backup=escape_markup(backup_desc)))
     table.add_row(t("confirm_client", clients=describe_clients(clients)))
     table.add_row(t("confirm_eta", eta=_estimate_text(total)))
 

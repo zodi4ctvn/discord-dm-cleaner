@@ -6,7 +6,7 @@
 
 **Safely delete your own Discord DM & Group DM messages — interactive CLI tool by `zodi4ctvn`**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Custom Non-Commercial](https://img.shields.io/badge/License-Non--Commercial%20Attribution-orange.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Ruff](https://img.shields.io/badge/Linter-Ruff-purple.svg)](https://docs.astral.sh/ruff/)
 [![Mypy](https://img.shields.io/badge/Type%20Check-Mypy%20Strict-2a6db2.svg)](https://mypy-lang.org/)
@@ -135,8 +135,8 @@ python -m cleaner.main
 ### Güvenlik
 
 - Token asla `.env`, log dosyası veya herhangi bir yapılandırma dosyasına yazılmaz
-- Yalnızca 5 Discord REST endpoint'ine ham `httpx` (HTTP/2) ile bağlanır (`GET /users/@me`, `GET /users/@me/channels`, `GET /channels/{id}/messages/search`, `GET /channels/{id}/messages`, `DELETE /channels/{id}/messages/{id}`)
-- Telemetri, analitik veya `discord.com` dışında hiçbir ağ bağlantısı yoktur (`trust_env=False`)
+- Yalnızca 5 Discord REST endpoint'ine ham `httpx` (HTTP/2) ile bağlanır (`GET /users/@me`, `GET /users/@me/channels`, `GET /channels/{id}/messages/search`, `GET /channels/{id}/messages`, `DELETE /channels/{id}/messages/{id}`); isteğe bağlı medya indirmeleri yalnızca resmi Discord CDN alan adlarından (`cdn.discordapp.com`, `media.discordapp.net`) dosya başı 50 MB sınırı ile yapılır
+- Telemetri, analitik veya `discord.com` / resmi Discord CDN dışında hiçbir ağ bağlantısı yoktur (`trust_env=False`)
 - Her oturumda taze bir `X-Super-Properties` parmak izi üretilir
 - HTTP 401 (iptal edilmiş/geçersiz token) alındığında işlem anında durdurulur
 
@@ -266,8 +266,8 @@ python -m cleaner.main
 ### Security
 
 - Token is never persisted to `.env`, logs, or disk
-- Raw `httpx` (HTTP/2) calls to only 5 Discord endpoints (`GET /users/@me`, `GET /users/@me/channels`, `GET /channels/{id}/messages/search`, `GET /channels/{id}/messages`, `DELETE /channels/{id}/messages/{id}`)
-- Zero telemetry, zero analytics, zero network calls outside `discord.com` (`trust_env=False`)
+- Raw `httpx` (HTTP/2) calls to only 5 Discord endpoints (`GET /users/@me`, `GET /users/@me/channels`, `GET /channels/{id}/messages/search`, `GET /channels/{id}/messages`, `DELETE /channels/{id}/messages/{id}`); optional offline attachment downloads are strictly restricted to official Discord CDN hosts (`cdn.discordapp.com`, `media.discordapp.net`) with a 50 MB per-file cap
+- Zero telemetry, zero analytics, zero network calls outside `discord.com` and official Discord CDN hosts (`trust_env=False`)
 - Fresh `X-Super-Properties` fingerprint generated per session
 - Aborts immediately on HTTP 401 (invalid/revoked token)
 
@@ -295,6 +295,7 @@ discord-dm-cleaner/
 │       ├── checkpoint.py    # Token-free resume checkpoints for interrupted runs
 │       ├── ui.py            # Rich + prompt_toolkit / Questionary TUI
 │       ├── i18n.py          # Turkish & English localization
+│       ├── integrity.py     # Zodi4c brand & attribution integrity guard
 │       ├── security.py      # Masked token input, secure_wipe, fingerprint, Layer-1 limiter
 │       └── utils.py         # Adaptive delays, snowflakes, date parsing, logging helpers
 ├── tests/
@@ -313,7 +314,7 @@ discord-dm-cleaner/
 ├── start.bat                # One-click Windows launcher (auto-setup)
 ├── pyproject.toml           # Hatchling build config, dependencies, Ruff & Mypy
 ├── README.md
-├── LICENSE                  # MIT — zodi4ctvn
+├── LICENSE                  # Custom Non-Commercial Attribution License — Zodi4c
 └── .gitignore
 ```
 
@@ -331,6 +332,12 @@ mypy src
 
 ---
 
+## License
+
+This project is licensed under the **[Custom Non-Commercial Attribution License](LICENSE)** — Copyright (c) 2026 **Zodi4c** ([github.com/zodi4ctvn](https://github.com/zodi4ctvn)). Personal and non-commercial use is permitted with mandatory author attribution; commercial use or rebranding is prohibited.
+
+---
+
 <div align="center">
-Made by <a href="https://github.com/zodi4ctvn">zodi4ctvn</a> · MIT License
+Made by <a href="https://github.com/zodi4ctvn">Zodi4c (zodi4ctvn)</a> · <a href="LICENSE">Custom Non-Commercial Attribution License</a>
 </div>
